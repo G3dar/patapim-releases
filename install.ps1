@@ -12,55 +12,27 @@ Write-Host ""
 Write-Host "  Project Management IDE for Claude Code" -ForegroundColor DarkGray
 Write-Host ""
 
-$repo = "G3dar/patapim-releases"
-$apiUrl = "https://api.github.com/repos/$repo/releases/latest"
+$infoUrl = "https://patapim.ai/api/download/info"
+$downloadUrl = "https://patapim.ai/api/download/latest"
 
 Write-Host "  Fetching latest release..." -ForegroundColor Yellow
 
 try {
-    $release = Invoke-RestMethod -Uri $apiUrl -Headers @{
-        "User-Agent" = "PATAPIM-Installer"
-        "Accept"     = "application/vnd.github.v3+json"
-    }
+    $ProgressPreference = 'SilentlyContinue'
+    $info = Invoke-RestMethod -Uri $infoUrl -Headers @{ "User-Agent" = "PATAPIM-Installer" }
 } catch {
-    if ($_.Exception.Response.StatusCode -eq 404) {
-        Write-Host "  Error: No releases found." -ForegroundColor Red
-        Write-Host "  Visit https://github.com/$repo/releases for updates." -ForegroundColor Red
-    } else {
-        Write-Host "  Error: Could not connect to GitHub." -ForegroundColor Red
-        Write-Host "  Check your internet connection and try again." -ForegroundColor Red
-    }
+    Write-Host "  Error: Could not fetch release info." -ForegroundColor Red
+    Write-Host "  Check your internet connection and try again." -ForegroundColor Red
     exit 1
 }
 
-$version = $release.tag_name
-Write-Host "  Found version: $version" -ForegroundColor Green
+$version = $info.version
+$fileName = $info.file
+Write-Host "  Found version: v$version" -ForegroundColor Green
 
-# Find the Windows installer (.exe NSIS installer)
-$asset = $release.assets | Where-Object {
-    $_.name -match "\.exe$" -and $_.name -match "win"
-} | Select-Object -First 1
-
-if (-not $asset) {
-    # Fallback: try any .exe
-    $asset = $release.assets | Where-Object {
-        $_.name -match "\.exe$"
-    } | Select-Object -First 1
-}
-
-if (-not $asset) {
-    Write-Host "  Error: No Windows installer found in this release." -ForegroundColor Red
-    Write-Host "  Available assets:" -ForegroundColor Red
-    $release.assets | ForEach-Object { Write-Host "    - $($_.name)" -ForegroundColor DarkGray }
-    exit 1
-}
-
-$downloadUrl = $asset.browser_download_url
-$fileName = $asset.name
-$fileSize = [math]::Round($asset.size / 1MB, 1)
 $tempPath = Join-Path $env:TEMP $fileName
 
-Write-Host "  Downloading $fileName ($fileSize MB)..." -ForegroundColor Yellow
+Write-Host "  Downloading $fileName..." -ForegroundColor Yellow
 
 try {
     $ProgressPreference = 'SilentlyContinue'

@@ -19,15 +19,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$ErrorActionPreference = 'Stop'; " ^
     "$ProgressPreference = 'SilentlyContinue'; " ^
     "try { " ^
-    "  $r = Invoke-RestMethod 'https://api.github.com/repos/G3dar/patapim-releases/releases/latest' -Headers @{'User-Agent'='PATAPIM-Installer'}; " ^
-    "  $v = $r.tag_name; " ^
-    "  Write-Host \"  Found version: $v\"; " ^
-    "  $a = $r.assets | Where-Object { $_.name -match '\.exe$' } | Select-Object -First 1; " ^
-    "  if (-not $a) { Write-Host '  Error: No installer found.' -ForegroundColor Red; exit 1 }; " ^
-    "  $f = Join-Path $env:TEMP $a.name; " ^
-    "  $mb = [math]::Round($a.size / 1MB, 1); " ^
-    "  Write-Host \"  Downloading $($a.name) ($mb MB)...\"; " ^
-    "  Invoke-WebRequest $a.browser_download_url -OutFile $f -UseBasicParsing; " ^
+    "  $info = Invoke-RestMethod 'https://patapim.ai/api/download/info' -Headers @{'User-Agent'='PATAPIM-Installer'}; " ^
+    "  $v = $info.version; " ^
+    "  Write-Host \"  Found version: v$v\"; " ^
+    "  $f = Join-Path $env:TEMP $info.file; " ^
+    "  Write-Host \"  Downloading $($info.file)...\"; " ^
+    "  Invoke-WebRequest 'https://patapim.ai/api/download/latest' -OutFile $f -UseBasicParsing; " ^
     "  Write-Host '  Running installer...'; " ^
     "  $p = Start-Process $f -Wait -PassThru; " ^
     "  Remove-Item $f -Force -ErrorAction SilentlyContinue; " ^
