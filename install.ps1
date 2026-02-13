@@ -1,4 +1,4 @@
-# PATAPIM Installer for Windows PowerShell
+# PATAPIM Installer for Windows PowerShell (Silent ZIP-based install)
 # Usage: irm https://raw.githubusercontent.com/G3dar/patapim-releases/main/install.ps1 | iex
 $ErrorActionPreference = "Stop"
 
@@ -13,8 +13,10 @@ Write-Host "  Project Management IDE for Claude Code" -ForegroundColor DarkGray
 Write-Host ""
 
 $infoUrl = "https://patapim.ai/api/download/info"
-$downloadUrl = "https://patapim.ai/api/download/latest"
+$downloadUrl = "https://patapim.ai/api/download/latest-zip"
+$installDir = Join-Path $env:LOCALAPPDATA "Programs\PATAPIM"
 
+# ---- Step 1: Fetch release info ----
 Write-Host "  Fetching latest release..." -ForegroundColor Yellow
 
 try {
@@ -27,12 +29,17 @@ try {
 }
 
 $version = $info.version
-$fileName = $info.file
+$zipFile = $info.zipFile
+if (-not $zipFile) {
+    Write-Host "  Error: ZIP distribution not available. Please try again later." -ForegroundColor Red
+    exit 1
+}
 Write-Host "  Found version: v$version" -ForegroundColor Green
 
-$tempPath = Join-Path $env:TEMP $fileName
+# ---- Step 2: Download ZIP ----
+$tempPath = Join-Path $env:TEMP $zipFile
 
-Write-Host "  Downloading $fileName..." -ForegroundColor Yellow
+Write-Host "  Downloading $zipFile..." -ForegroundColor Yellow
 
 try {
     $ProgressPreference = 'SilentlyContinue'
@@ -42,106 +49,169 @@ try {
     exit 1
 }
 
-Write-Host "  Running installer..." -ForegroundColor Yellow
-Write-Host ""
+# ---- Step 3: Kill running PATAPIM processes ----
+$procs = Get-Process -Name "PATAPIM" -ErrorAction SilentlyContinue
+if ($procs) {
+    Write-Host "  Closing running PATAPIM..." -ForegroundColor Yellow
+    $procs | Stop-Process -Force
+    Start-Sleep -Seconds 1
+}
 
-$process = Start-Process -FilePath $tempPath -Wait -PassThru
+# ---- Step 4: Extract ZIP to install directory ----
+Write-Host "  Installing to $installDir..." -ForegroundColor Yellow
 
-# Cleanup
+if (Test-Path $installDir) {
+    Remove-Item -Path $installDir -Recurse -Force
+}
+New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+
+try {
+    Expand-Archive -Path $tempPath -DestinationPath $installDir -Force
+
+    # If the ZIP contains a single top-level folder, move its contents up
+    $items = Get-ChildItem -Path $installDir
+    if ($items.Count -eq 1 -and $items[0].PSIsContainer) {
+        $innerDir = $items[0].FullName
+        Get-ChildItem -Path $innerDir | Move-Item -Destination $installDir -Force
+        Remove-Item -Path $innerDir -Force
+    }
+} catch {
+    Write-Host "  Error: Failed to extract ZIP." -ForegroundColor Red
+    exit 1
+}
+
+# ---- Step 5: Create Start Menu shortcut ----
+Write-Host "  Creating shortcuts..." -ForegroundColor Yellow
+$exePath = Join-Path $installDir "PATAPIM.exe"
+
+try {
+    $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut((Join-Path $startMenuDir "PATAPIM.lnk"))
+    $shortcut.TargetPath = $exePath
+    $shortcut.WorkingDirectory = $installDir
+    $shortcut.Description = "PATAPIM - Project Management IDE for Claude Code"
+    $shortcut.Save()
+    Write-Host "    Start Menu: created" -ForegroundColor Green
+} catch {
+    Write-Host "    Start Menu: failed ($($_.Exception.Message))" -ForegroundColor Yellow
+}
+
+# Desktop shortcut
+try {
+    $desktopDir = [Environment]::GetFolderPath("Desktop")
+    $shortcut = $shell.CreateShortcut((Join-Path $desktopDir "PATAPIM.lnk"))
+    $shortcut.TargetPath = $exePath
+    $shortcut.WorkingDirectory = $installDir
+    $shortcut.Description = "PATAPIM - Project Management IDE for Claude Code"
+    $shortcut.Save()
+    Write-Host "    Desktop: created" -ForegroundColor Green
+} catch {
+    Write-Host "    Desktop: failed ($($_.Exception.Message))" -ForegroundColor Yellow
+}
+
+# ---- Step 6: Add to user PATH ----
+try {
+    $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($userPath -notlike "*$installDir*") {
+        [Environment]::SetEnvironmentVariable("PATH", "$userPath;$installDir", "User")
+        $env:PATH = "$env:PATH;$installDir"
+        Write-Host "    PATH: added" -ForegroundColor Green
+    } else {
+        Write-Host "    PATH: already set" -ForegroundColor DarkGray
+    }
+} catch {
+    Write-Host "    PATH: failed ($($_.Exception.Message))" -ForegroundColor Yellow
+}
+
+# ---- Step 7: Cleanup temp file ----
 Remove-Item -Path $tempPath -Force -ErrorAction SilentlyContinue
 
-if ($process.ExitCode -eq 0) {
-    Write-Host ""
-    Write-Host "  PATAPIM $version installed successfully!" -ForegroundColor Green
-    Write-Host ""
+Write-Host ""
+Write-Host "  PATAPIM v$version installed successfully!" -ForegroundColor Green
+Write-Host ""
 
-    # --- MCP Registration ---
-    # Detect installed PATAPIM path and register MCP server in AI coding tools
-    $patapimPath = Join-Path $env:LOCALAPPDATA "Programs\PATAPIM\resources\app\src\mcp\patapim-browser-server.js"
-    if (-not (Test-Path $patapimPath)) {
-        # Fallback: try common install path
-        $patapimPath = Join-Path $env:LOCALAPPDATA "Programs\patapim\resources\app\src\mcp\patapim-browser-server.js"
+# ---- Step 8: Register MCP servers ----
+$patapimPath = Join-Path $installDir "resources\app\src\mcp\patapim-browser-server.js"
+if (-not (Test-Path $patapimPath)) {
+    # Fallback: try lowercase
+    $patapimPath = Join-Path $installDir "resources\app\src\mcp\patapim-browser-server.js"
+}
+
+if (Test-Path $patapimPath) {
+    $mcpServerPath = $patapimPath -replace '\\', '/'
+    Write-Host "  Registering MCP server in AI coding tools..." -ForegroundColor Yellow
+
+    # Claude Code: ~/.claude.json
+    try {
+        $claudeConfig = Join-Path $HOME ".claude.json"
+        if (Test-Path $claudeConfig) {
+            $cfg = Get-Content $claudeConfig -Raw | ConvertFrom-Json
+            if (-not $cfg.mcpServers) {
+                $cfg | Add-Member -NotePropertyName "mcpServers" -NotePropertyValue ([PSCustomObject]@{}) -Force
+            }
+            $entry = [PSCustomObject]@{ type = "stdio"; command = "node"; args = @($mcpServerPath) }
+            $cfg.mcpServers | Add-Member -NotePropertyName "patapim-browser" -NotePropertyValue $entry -Force
+            # Remove stale frame-browser
+            if ($cfg.mcpServers.PSObject.Properties["frame-browser"]) {
+                $cfg.mcpServers.PSObject.Properties.Remove("frame-browser")
+            }
+            $cfg | ConvertTo-Json -Depth 20 | Set-Content $claudeConfig -Encoding UTF8
+            Write-Host "    Claude Code: registered" -ForegroundColor Green
+        } else {
+            Write-Host "    Claude Code: not installed, skipped" -ForegroundColor DarkGray
+        }
+    } catch {
+        Write-Host "    Claude Code: registration failed ($($_.Exception.Message))" -ForegroundColor Yellow
     }
 
-    if (Test-Path $patapimPath) {
-        $mcpServerPath = $patapimPath -replace '\\', '/'
-        Write-Host "  Registering MCP server in AI coding tools..." -ForegroundColor Yellow
-
-        # Claude Code: ~/.claude.json
-        try {
-            $claudeConfig = Join-Path $HOME ".claude.json"
-            if (Test-Path $claudeConfig) {
-                $cfg = Get-Content $claudeConfig -Raw | ConvertFrom-Json
-                if (-not $cfg.mcpServers) {
-                    $cfg | Add-Member -NotePropertyName "mcpServers" -NotePropertyValue ([PSCustomObject]@{}) -Force
-                }
-                $entry = [PSCustomObject]@{ type = "stdio"; command = "node"; args = @($mcpServerPath) }
-                $cfg.mcpServers | Add-Member -NotePropertyName "patapim-browser" -NotePropertyValue $entry -Force
-                # Remove stale frame-browser
-                if ($cfg.mcpServers.PSObject.Properties["frame-browser"]) {
-                    $cfg.mcpServers.PSObject.Properties.Remove("frame-browser")
-                }
-                $cfg | ConvertTo-Json -Depth 20 | Set-Content $claudeConfig -Encoding UTF8
-                Write-Host "    Claude Code: registered" -ForegroundColor Green
+    # Gemini CLI: ~/.gemini/settings.json
+    try {
+        $geminiDir = Join-Path $HOME ".gemini"
+        if (Test-Path $geminiDir) {
+            $geminiSettings = Join-Path $geminiDir "settings.json"
+            if (Test-Path $geminiSettings) {
+                $cfg = Get-Content $geminiSettings -Raw | ConvertFrom-Json
             } else {
-                Write-Host "    Claude Code: not installed, skipped" -ForegroundColor DarkGray
+                $cfg = [PSCustomObject]@{}
             }
-        } catch {
-            Write-Host "    Claude Code: registration failed ($($_.Exception.Message))" -ForegroundColor Yellow
-        }
-
-        # Gemini CLI: ~/.gemini/settings.json
-        try {
-            $geminiDir = Join-Path $HOME ".gemini"
-            if (Test-Path $geminiDir) {
-                $geminiSettings = Join-Path $geminiDir "settings.json"
-                if (Test-Path $geminiSettings) {
-                    $cfg = Get-Content $geminiSettings -Raw | ConvertFrom-Json
-                } else {
-                    $cfg = [PSCustomObject]@{}
-                }
-                if (-not $cfg.mcpServers) {
-                    $cfg | Add-Member -NotePropertyName "mcpServers" -NotePropertyValue ([PSCustomObject]@{}) -Force
-                }
-                $entry = [PSCustomObject]@{ command = "node"; args = @($mcpServerPath) }
-                $cfg.mcpServers | Add-Member -NotePropertyName "patapim-browser" -NotePropertyValue $entry -Force
-                $cfg | ConvertTo-Json -Depth 20 | Set-Content $geminiSettings -Encoding UTF8
-                Write-Host "    Gemini CLI: registered" -ForegroundColor Green
-            } else {
-                Write-Host "    Gemini CLI: not installed, skipped" -ForegroundColor DarkGray
+            if (-not $cfg.mcpServers) {
+                $cfg | Add-Member -NotePropertyName "mcpServers" -NotePropertyValue ([PSCustomObject]@{}) -Force
             }
-        } catch {
-            Write-Host "    Gemini CLI: registration failed ($($_.Exception.Message))" -ForegroundColor Yellow
+            $entry = [PSCustomObject]@{ command = "node"; args = @($mcpServerPath) }
+            $cfg.mcpServers | Add-Member -NotePropertyName "patapim-browser" -NotePropertyValue $entry -Force
+            $cfg | ConvertTo-Json -Depth 20 | Set-Content $geminiSettings -Encoding UTF8
+            Write-Host "    Gemini CLI: registered" -ForegroundColor Green
+        } else {
+            Write-Host "    Gemini CLI: not installed, skipped" -ForegroundColor DarkGray
         }
-
-        # Codex CLI: ~/.codex/config.toml
-        try {
-            $codexDir = Join-Path $HOME ".codex"
-            if (Test-Path $codexDir) {
-                $codexConfig = Join-Path $codexDir "config.toml"
-                $content = ""
-                if (Test-Path $codexConfig) {
-                    $content = Get-Content $codexConfig -Raw
-                }
-                if ($content -notmatch '\[mcp_servers\.patapim-browser\]') {
-                    $tomlSection = "`n[mcp_servers.patapim-browser]`ncommand = `"node`"`nargs = [`"$mcpServerPath`"]`n"
-                    $content = $content.TrimEnd() + "`n" + $tomlSection
-                    Set-Content $codexConfig -Value $content -Encoding UTF8
-                    Write-Host "    Codex CLI: registered" -ForegroundColor Green
-                } else {
-                    Write-Host "    Codex CLI: already registered" -ForegroundColor DarkGray
-                }
-            } else {
-                Write-Host "    Codex CLI: not installed, skipped" -ForegroundColor DarkGray
-            }
-        } catch {
-            Write-Host "    Codex CLI: registration failed ($($_.Exception.Message))" -ForegroundColor Yellow
-        }
-
-        Write-Host ""
+    } catch {
+        Write-Host "    Gemini CLI: registration failed ($($_.Exception.Message))" -ForegroundColor Yellow
     }
-} else {
-    Write-Host ""
-    Write-Host "  Installation may have been cancelled." -ForegroundColor Yellow
+
+    # Codex CLI: ~/.codex/config.toml
+    try {
+        $codexDir = Join-Path $HOME ".codex"
+        if (Test-Path $codexDir) {
+            $codexConfig = Join-Path $codexDir "config.toml"
+            $content = ""
+            if (Test-Path $codexConfig) {
+                $content = Get-Content $codexConfig -Raw
+            }
+            if ($content -notmatch '\[mcp_servers\.patapim-browser\]') {
+                $tomlSection = "`n[mcp_servers.patapim-browser]`ncommand = `"node`"`nargs = [`"$mcpServerPath`"]`n"
+                $content = $content.TrimEnd() + "`n" + $tomlSection
+                Set-Content $codexConfig -Value $content -Encoding UTF8
+                Write-Host "    Codex CLI: registered" -ForegroundColor Green
+            } else {
+                Write-Host "    Codex CLI: already registered" -ForegroundColor DarkGray
+            }
+        } else {
+            Write-Host "    Codex CLI: not installed, skipped" -ForegroundColor DarkGray
+        }
+    } catch {
+        Write-Host "    Codex CLI: registration failed ($($_.Exception.Message))" -ForegroundColor Yellow
+    }
+
     Write-Host ""
 }
