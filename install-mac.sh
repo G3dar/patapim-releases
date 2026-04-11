@@ -37,7 +37,11 @@ INFO=$(curl -fsSL "$INFO_URL" 2>/dev/null) || {
   exit 1
 }
 
-VERSION=$(echo "$INFO" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+# Prefer macVersion (set by mac release), fall back to version
+VERSION=$(echo "$INFO" | grep -o '"macVersion":"[^"]*"' | cut -d'"' -f4)
+if [ -z "$VERSION" ]; then
+  VERSION=$(echo "$INFO" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+fi
 echo "  Found version: v${VERSION}"
 echo "  Architecture:  ${ARCH_LABEL}"
 echo ""
