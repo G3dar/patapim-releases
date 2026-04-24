@@ -16,6 +16,35 @@ $infoUrl = "https://patapim.ai/api/download/info"
 $downloadUrl = "https://patapim.ai/api/download/latest-zip"
 $installDir = Join-Path $env:LOCALAPPDATA "Programs\PATAPIM"
 
+# ---- Choose install folder ----
+Write-Host "  Install folder: " -NoNewline -ForegroundColor White
+Write-Host $installDir -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Press any key to change, or wait 10 seconds to continue..." -ForegroundColor DarkGray
+
+$keyPressed = $false
+for ($i = 10; $i -gt 0; $i--) {
+    if ([Console]::KeyAvailable) {
+        [Console]::ReadKey($true) | Out-Null
+        $keyPressed = $true
+        break
+    }
+    Write-Host "`r  Continuing in $i seconds...  " -NoNewline -ForegroundColor DarkGray
+    Start-Sleep -Seconds 1
+}
+Write-Host ""
+
+if ($keyPressed) {
+    $custom = Read-Host "  Enter install path"
+    if ($custom -and $custom.Trim() -ne "") {
+        $installDir = $custom.Trim()
+    }
+    Write-Host ""
+    Write-Host "  Install folder: " -NoNewline -ForegroundColor White
+    Write-Host $installDir -ForegroundColor Cyan
+}
+Write-Host ""
+
 # ---- Step 1: Fetch release info ----
 Write-Host "  Fetching latest release..." -ForegroundColor Yellow
 

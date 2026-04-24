@@ -13,6 +13,21 @@ echo.
 echo   Project Management IDE for Claude Code
 echo.
 
+set "PATAPIM_DIR=%LOCALAPPDATA%\Programs\PATAPIM"
+echo   Install folder: %PATAPIM_DIR%
+echo.
+echo   Press Y to change install folder, or wait 10 seconds to continue.
+choice /c YN /t 10 /d N /n /m "  [Y/N] "
+if %errorlevel%==1 goto :change_dir
+goto :continue_install
+:change_dir
+echo.
+set /p "PATAPIM_DIR=  Enter install path: "
+echo.
+echo   Install folder: %PATAPIM_DIR%
+:continue_install
+echo.
+
 echo   Fetching latest release...
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -25,7 +40,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "  if (-not $zf) { Write-Host '  Error: ZIP distribution not available.' -ForegroundColor Red; exit 1 }; " ^
     "  Write-Host \"  Found version: v$v\" -ForegroundColor Green; " ^
     "  $tmp = Join-Path $env:TEMP $zf; " ^
-    "  $installDir = Join-Path $env:LOCALAPPDATA 'Programs\PATAPIM'; " ^
+    "  $installDir = if ($env:PATAPIM_DIR) { $env:PATAPIM_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\PATAPIM' }; " ^
     "  Write-Host \"  Downloading $zf...\"; " ^
     "  Invoke-WebRequest 'https://patapim.ai/api/download/latest-zip' -OutFile $tmp -UseBasicParsing; " ^
     "  $procs = Get-Process -Name 'PATAPIM' -ErrorAction SilentlyContinue; " ^
@@ -111,7 +126,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "  exit 1 " ^
     "}"
 
-:: Self-cleanup
-del "%~f0" >nul 2>&1
-
 endlocal
+
+:: Self-cleanup (goto-eof trick avoids "batch file not found" error on self-delete)
+(goto) 2>nul & del "%~f0"
