@@ -244,3 +244,14 @@ if (Test-Path $patapimPath) {
 
     Write-Host ""
 }
+
+# ---- Step 9: Launch PATAPIM ----
+if (Test-Path $exePath) {
+    Write-Host "  Launching PATAPIM..." -ForegroundColor Yellow
+    try {
+        Start-Process -FilePath $exePath -WorkingDirectory $installDir
+    } catch {
+        Write-Host "  Failed to launch PATAPIM: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  You can start it from the Start Menu or Desktop shortcut." -ForegroundColor DarkGray
+    }
+}

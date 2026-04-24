@@ -133,6 +133,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "  exit 1 " ^
     "}"
 
+:: ---- Launch PATAPIM ----
+if exist "%PATAPIM_DIR%\PATAPIM.exe" (
+    echo   Launching PATAPIM...
+    start "" "%PATAPIM_DIR%\PATAPIM.exe"
+)
+
 endlocal
 
 :: Self-cleanup (goto-eof trick avoids "batch file not found" error on self-delete)

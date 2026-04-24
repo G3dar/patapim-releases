@@ -158,5 +158,11 @@ fi
 
 echo "  PATAPIM v${VERSION} installed successfully!"
 echo ""
-echo "  To launch: open /Applications/${APP_NAME}"
+
+# ---- Step 8: Launch PATAPIM ----
+echo "  Launching PATAPIM..."
+open "${INSTALL_DIR}/${APP_NAME}" 2>/dev/null || {
+  echo "  Failed to launch automatically."
+  echo "  You can start it with: open /Applications/${APP_NAME}"
+}
 echo ""
