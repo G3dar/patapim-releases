@@ -16,8 +16,15 @@ echo.
 set "PATAPIM_DIR=%LOCALAPPDATA%\Programs\PATAPIM"
 echo   Install folder: %PATAPIM_DIR%
 echo.
-echo   Press Y to change install folder, or wait 10 seconds to continue.
-choice /c YN /t 10 /d N /n /m "  [Y/N] "
+echo   Press F to change install folder, or any other key to continue (10s)...
+powershell -NoProfile -Command ^
+    "$deadline = (Get-Date).AddSeconds(10); " ^
+    "$k = $null; " ^
+    "while ((Get-Date) -lt $deadline) { " ^
+    "  if ([Console]::KeyAvailable) { $k = [Console]::ReadKey($true); break }; " ^
+    "  Start-Sleep -Milliseconds 100 " ^
+    "}; " ^
+    "if ($k -and $k.Key -eq 'F') { exit 1 } else { exit 0 }"
 if %errorlevel%==1 goto :change_dir
 goto :continue_install
 :change_dir

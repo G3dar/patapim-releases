@@ -20,13 +20,13 @@ $installDir = Join-Path $env:LOCALAPPDATA "Programs\PATAPIM"
 Write-Host "  Install folder: " -NoNewline -ForegroundColor White
 Write-Host $installDir -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Press any key to change, or wait 10 seconds to continue..." -ForegroundColor DarkGray
+Write-Host "  Press F to change install folder, or any other key to continue (10s)..." -ForegroundColor DarkGray
 
-$keyPressed = $false
+$changeFolder = $false
 for ($i = 10; $i -gt 0; $i--) {
     if ([Console]::KeyAvailable) {
-        [Console]::ReadKey($true) | Out-Null
-        $keyPressed = $true
+        $k = [Console]::ReadKey($true)
+        if ($k.Key -eq 'F') { $changeFolder = $true }
         break
     }
     Write-Host "`r  Continuing in $i seconds...  " -NoNewline -ForegroundColor DarkGray
@@ -34,7 +34,7 @@ for ($i = 10; $i -gt 0; $i--) {
 }
 Write-Host ""
 
-if ($keyPressed) {
+if ($changeFolder) {
     $custom = Read-Host "  Enter install path"
     if ($custom -and $custom.Trim() -ne "") {
         $installDir = $custom.Trim()
