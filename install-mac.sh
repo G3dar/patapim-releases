@@ -68,12 +68,16 @@ fi
 
 # ---- Step 4: Mount DMG and copy app ----
 echo "  Installing to /Applications..."
-MOUNT_DIR=$(hdiutil attach "$TEMP_DMG" -nobrowse -quiet -mountrandom /tmp 2>/dev/null | tail -1 | awk '{print $NF}')
-
-if [ -z "$MOUNT_DIR" ] || [ ! -d "$MOUNT_DIR" ]; then
-  # Fallback: try to find the mount point
-  MOUNT_DIR=$(hdiutil attach "$TEMP_DMG" -nobrowse -quiet 2>/dev/null | grep "/Volumes" | awk -F'\t' '{print $NF}' | xargs)
-fi
+# Mount the DMG and read the mount point from -plist output.
+# NOTE: do NOT pass -quiet here. -quiet suppresses the stdout we parse, so
+# MOUNT_DIR came back empty and the install silently aborted on any machine
+# that didn't already have the app. Parsing the plist also handles volume
+# names that contain spaces (which `awk '{print $NF}'` would split).
+MOUNT_DIR=$(hdiutil attach "$TEMP_DMG" -nobrowse -noautoopen -plist 2>/dev/null \
+  | grep -A1 '<key>mount-point</key>' \
+  | grep '<string>' \
+  | sed -E 's/.*<string>(.*)<\/string>.*/\1/' \
+  | head -1 || true)
 
 if [ -z "$MOUNT_DIR" ] || [ ! -d "$MOUNT_DIR" ]; then
   echo "  Error: Failed to mount DMG." >&2
